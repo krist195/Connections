@@ -1,0 +1,373 @@
+import { Lang } from "./types";
+
+const RU = {
+  app: "Connections",
+  new: "Новый",
+  open: "Открыть",
+  save: "Сохранить",
+  saveAs: "Сохранить как",
+  language: "Язык",
+  people: "Люди",
+  connections: "Связи",
+  hintCreate:
+    "Двойной клик: создать · Перетаскивание: двигать · Shift+перетащить: связь · Ctrl+рамка: выделить · Колесо: зум · Тянуть фон: панорама",
+
+  hidePanel: "Скрыть панель",
+  showPanel: "Показать панель",
+  showNames: "Показывать имена",
+
+  // multi-select
+  selected: "Выбрано: {n}",
+  deleteSelected: "Удалить выбранных",
+  clearSelection: "Снять выделение",
+  confirmDeleteTitle: "Удалить выбранных?",
+  confirmDeleteBody: "Удалить людей: {n}? Все их связи тоже удалятся.",
+  delete: "Удалить",
+  cancel: "Отмена",
+
+  selectPerson: "Выбери человека на графе",
+  unknown: "Неизвестно",
+  deletePerson: "Удалить",
+
+  photos: "Фото",
+  addPhotos: "Добавить фото",
+  remove: "Удалить",
+
+  basicSection: "Основное",
+  appearanceSection: "Внешность",
+  contactsSection: "Контакты",
+
+  nameLabel: "Имя",
+  surnameLabel: "Фамилия",
+  birthdayLabel: "День рождения",
+  cityLabel: "Город",
+
+  smokesLabel: "Курит",
+  usesLabel: "Употребляет",
+  subcultureLabel: "Субкультура",
+  orientationLabel: "Ориентация",
+  financeLabel: "Финансы",
+  relationshipStatusLabel: "Статус отношений",
+
+  heightLabel: "Рост (см)",
+  weightLabel: "Вес (кг)",
+  bodyTypeLabel: "Телосложение",
+  eyeColorLabel: "Цвет глаз",
+  hairLengthLabel: "Длина волос",
+  hairStyleLabel: "Стиль волос",
+  hairColorLabel: "Цвет волос",
+  tattoosLabel: "Тату",
+  piercingLabel: "Пирсинг",
+
+  phoneLabel: "Телефон",
+  emailLabel: "Email",
+  occupationLabel: "Учёба / Работа",
+  tagsLabel: "Теги (через запятую)",
+  tagsPlaceholder: "тег1, тег2",
+
+  socials: "Соцсети",
+  type: "Тип",
+  value: "Значение",
+  addSocial: "Добавить",
+  linksOpenExternally: "Ссылки открываются в браузере",
+
+  notes: "Заметки",
+
+  yes: "Да",
+  no: "Нет",
+
+  // relationship status options
+  rel_unknown: "Неизвестно",
+  rel_single: "Свободен(на)",
+  rel_dating: "Встречается",
+  rel_relationship: "Отношения",
+  rel_married: "Женат/Замужем",
+  rel_complicated: "Сложно",
+
+  // body
+  body_unknown: "Неизвестно",
+  body_slim: "Худое",
+  body_average: "Среднее",
+  body_athletic: "Спортивное",
+  body_heavy: "Крупное",
+
+  // eye
+  eye_unknown: "Неизвестно",
+  eye_brown: "Карие",
+  eye_blue: "Голубые",
+  eye_green: "Зелёные",
+  eye_gray: "Серые",
+  eye_hazel: "Ореховые",
+  eye_other: "Другое",
+
+  // hair length
+  hl_unknown: "Неизвестно",
+  hl_short: "Короткие",
+  hl_medium: "Средние",
+  hl_long: "Длинные",
+  hl_very_long: "Очень длинные",
+  hl_bald: "Лысый(ая)",
+
+  // hair style
+  hs_unknown: "Неизвестно",
+  hs_straight: "Прямые",
+  hs_wavy: "Волнистые",
+  hs_curly: "Кудрявые",
+  hs_dreads: "Дреды",
+  hs_braids: "Косы",
+  hs_buzzcut: "Под машинку",
+  hs_undercut: "Андеркат",
+  hs_other: "Другое",
+
+  // hair color
+  hc_unknown: "Неизвестно",
+  hc_blonde: "Светлые",
+  hc_brown: "Русые",
+  hc_black: "Чёрные",
+  hc_red: "Рыжие",
+  hc_white: "Седые/белые",
+  hc_colored: "Окрашенные",
+  hc_other: "Другое",
+
+  // Subculture
+  sub_unknown: "Неизвестно",
+  sub_normal: "Обычный",
+  sub_oldmoney: "OldMoney",
+  sub_punk: "Панк",
+  sub_alt: "Альт",
+  sub_goth: "Гот",
+  sub_emo: "Эмо",
+  sub_metal: "Метал",
+  sub_hiphop: "Хип-хоп",
+  sub_raver: "Рейвер",
+  sub_grunge: "Гранж",
+  sub_skater: "Скейт",
+  sub_anime: "Аниме",
+  sub_kpop: "K-pop",
+  sub_cyber: "Кибер",
+  sub_streetwear: "Streetwear",
+  sub_sport: "Спорт",
+  sub_business: "Бизнес",
+  sub_boho: "Boho",
+  sub_artsy: "Творческий",
+  sub_military: "Милитари",
+  sub_skinhead: "Скинхед",
+
+  // Orientation
+  ori_unknown: "Неизвестно",
+  ori_girls: "По девочкам",
+  ori_boys: "По парням",
+  ori_both: "По обоим",
+
+  // Finance
+  fin_unknown: "Неизвестно",
+  fin_low: "Низкий",
+  fin_middle: "Средний",
+  fin_high: "Высокий",
+
+  // linking
+  duplicateConnection: "Связь между этими людьми уже существует.",
+  invalidFile: "Неверный файл .connections",
+  zoomIn: "Приблизить",
+  zoomOut: "Отдалить",
+  fitView: "Уместить",
+  resetView: "Сброс",
+
+  linkTitle: "Создать связь",
+  linkChoose: "Выбери тип связи",
+  acquaintance: "Знакомый",
+  friend: "Друг",
+  bestFriend: "Лучший друг",
+  family: "Семья",
+  chooseRole: "Кто это в семье?",
+  brother: "Брат",
+  sister: "Сестра",
+  mother: "Мама",
+  father: "Отец",
+  create: "Создать"
+} as const;
+
+const EN: Record<keyof typeof RU, string> = {
+  app: "Connections",
+  new: "New",
+  open: "Open",
+  save: "Save",
+  saveAs: "Save as",
+  language: "Language",
+  people: "People",
+  connections: "Connections",
+  hintCreate:
+    "Double click: create · Drag: move · Shift+drag: link · Ctrl+box: select · Wheel: zoom · Drag background: pan",
+
+  hidePanel: "Hide panel",
+  showPanel: "Show panel",
+  showNames: "Show names",
+
+  selected: "Selected: {n}",
+  deleteSelected: "Delete selected",
+  clearSelection: "Clear selection",
+  confirmDeleteTitle: "Delete selected?",
+  confirmDeleteBody: "Delete people: {n}? All their connections will be removed too.",
+  delete: "Delete",
+  cancel: "Cancel",
+
+  selectPerson: "Select a person on the graph",
+  unknown: "Unknown",
+  deletePerson: "Delete",
+
+  photos: "Photos",
+  addPhotos: "Add photos",
+  remove: "Remove",
+
+  basicSection: "Basic",
+  appearanceSection: "Appearance",
+  contactsSection: "Contacts",
+
+  nameLabel: "Name",
+  surnameLabel: "Surname",
+  birthdayLabel: "Birthday",
+  cityLabel: "City",
+
+  smokesLabel: "Smokes",
+  usesLabel: "Uses substances",
+  subcultureLabel: "Subculture",
+  orientationLabel: "Orientation",
+  financeLabel: "Finance",
+  relationshipStatusLabel: "Relationship status",
+
+  heightLabel: "Height (cm)",
+  weightLabel: "Weight (kg)",
+  bodyTypeLabel: "Body type",
+  eyeColorLabel: "Eye color",
+  hairLengthLabel: "Hair length",
+  hairStyleLabel: "Hair style",
+  hairColorLabel: "Hair color",
+  tattoosLabel: "Tattoos",
+  piercingLabel: "Piercing",
+
+  phoneLabel: "Phone",
+  emailLabel: "Email",
+  occupationLabel: "School / Work",
+  tagsLabel: "Tags (comma separated)",
+  tagsPlaceholder: "tag1, tag2",
+
+  socials: "Socials",
+  type: "Type",
+  value: "Value",
+  addSocial: "Add",
+  linksOpenExternally: "Links open in your system browser",
+
+  notes: "Notes",
+
+  yes: "Yes",
+  no: "No",
+
+  rel_unknown: "Unknown",
+  rel_single: "Single",
+  rel_dating: "Dating",
+  rel_relationship: "Relationship",
+  rel_married: "Married",
+  rel_complicated: "Complicated",
+
+  body_unknown: "Unknown",
+  body_slim: "Slim",
+  body_average: "Average",
+  body_athletic: "Athletic",
+  body_heavy: "Heavy",
+
+  eye_unknown: "Unknown",
+  eye_brown: "Brown",
+  eye_blue: "Blue",
+  eye_green: "Green",
+  eye_gray: "Gray",
+  eye_hazel: "Hazel",
+  eye_other: "Other",
+
+  hl_unknown: "Unknown",
+  hl_short: "Short",
+  hl_medium: "Medium",
+  hl_long: "Long",
+  hl_very_long: "Very long",
+  hl_bald: "Bald",
+
+  hs_unknown: "Unknown",
+  hs_straight: "Straight",
+  hs_wavy: "Wavy",
+  hs_curly: "Curly",
+  hs_dreads: "Dreads",
+  hs_braids: "Braids",
+  hs_buzzcut: "Buzzcut",
+  hs_undercut: "Undercut",
+  hs_other: "Other",
+
+  hc_unknown: "Unknown",
+  hc_blonde: "Blonde",
+  hc_brown: "Brown",
+  hc_black: "Black",
+  hc_red: "Red",
+  hc_white: "White/Grey",
+  hc_colored: "Colored",
+  hc_other: "Other",
+
+  sub_unknown: "Unknown",
+  sub_normal: "Normal",
+  sub_oldmoney: "OldMoney",
+  sub_punk: "Punk",
+  sub_alt: "Alt",
+  sub_goth: "Goth",
+  sub_emo: "Emo",
+  sub_metal: "Metal",
+  sub_hiphop: "Hip-hop",
+  sub_raver: "Raver",
+  sub_grunge: "Grunge",
+  sub_skater: "Skater",
+  sub_anime: "Anime",
+  sub_kpop: "K-pop",
+  sub_cyber: "Cyber",
+  sub_streetwear: "Streetwear",
+  sub_sport: "Sport",
+  sub_business: "Business",
+  sub_boho: "Boho",
+  sub_artsy: "Artsy",
+  sub_military: "Military",
+  sub_skinhead: "Skinhead",
+
+  ori_unknown: "Unknown",
+  ori_girls: "Girls",
+  ori_boys: "Boys",
+  ori_both: "Both",
+
+  fin_unknown: "Unknown",
+  fin_low: "Low",
+  fin_middle: "Middle",
+  fin_high: "High",
+
+  duplicateConnection: "A connection between these people already exists.",
+  invalidFile: "Invalid .connections file",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
+  fitView: "Fit",
+  resetView: "Reset",
+
+  linkTitle: "Create connection",
+  linkChoose: "Choose connection type",
+  acquaintance: "Acquaintance",
+  friend: "Friend",
+  bestFriend: "Best friend",
+  family: "Family",
+  chooseRole: "Family role",
+  brother: "Brother",
+  sister: "Sister",
+  mother: "Mother",
+  father: "Father",
+  create: "Create"
+};
+
+export type I18nKey = keyof typeof RU;
+
+export function t(lang: Lang, key: I18nKey, vars?: Record<string, string | number>) {
+  const dict = lang === "ru" ? RU : EN;
+  let s = dict[key] ?? RU[key] ?? String(key);
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
+  return s;
+}

@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# build outputs
+dist/
+build/
+out/
+release/
+
+# electron-builder
+*.exe
+*.msi
+*.dmg
+*.AppImage
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# env
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vite / TS
+.vite/
+*.tsbuildinfo
