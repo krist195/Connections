@@ -48,11 +48,16 @@ function connectionLabel(lang: "ru" | "en", c: Connection) {
   if (c.kind === "family") {
     const role = c.familyRole;
     if (!role) return t(lang, "family");
-    const roleKey = role === "brother" ? "brother" : role === "sister" ? "sister" : role === "mother" ? "mother" : "father";
+    const roleKey =
+      role === "brother" ? "brother" :
+      role === "sister" ? "sister" :
+      role === "mother" ? "mother" : "father";
     return `${t(lang, "family")} — ${t(lang, roleKey as any)}`;
   }
   if (c.kind === "acquaintance") return t(lang, "acquaintance");
   if (c.kind === "friend") return t(lang, "friend");
+  if (c.kind === "best_friend") return t(lang, "bestFriend");
+  if (c.kind === "in_relationship") return t(lang, "inRelationship"); // ✅ NEW
   return t(lang, "bestFriend");
 }
 
@@ -143,6 +148,9 @@ export default function App() {
 
   const connectionExistsBetween = useStore((s) => s.connectionExistsBetween);
   const addConnection = useStore((s) => s.addConnection);
+
+  // ✅ NEW
+  const deleteConnection = useStore((s) => s.deleteConnection);
 
   const setViewport = useStore((s) => s.setViewport);
 
@@ -769,8 +777,6 @@ export default function App() {
 
       const json = JSON.stringify(tab.file, null, 2);
 
-      // if current tab is not the tab we save, we temporarily switch for markSaved updates
-      // easiest: if it's not active, switchTab then save then continue.
       if (tab.id !== activeTabId) switchTab(tab.id);
 
       const curPath = useStore.getState().filePath;
@@ -788,7 +794,7 @@ export default function App() {
 
   async function onCloseSaveAll() {
     const ok = await saveAllTabsOrAbort();
-    if (!ok) return; // cancelled
+    if (!ok) return;
     setClosePromptOpen(false);
     await window.api.quitApp();
   }
@@ -893,7 +899,6 @@ export default function App() {
               className="tabClose"
               onClick={(e) => {
                 e.stopPropagation();
-                // If dirty -> just close; close prompt only on app exit (как ты просил)
                 closeTab(tb.id);
               }}
               title={lang === "ru" ? "Закрыть" : "Close"}
@@ -979,6 +984,19 @@ export default function App() {
                         shadowBlur={10}
                         shadowOpacity={0.18}
                         perfectDrawEnabled={false}
+
+                        // ✅ ПКМ по линии -> удалить связь
+                        onContextMenu={(e) => {
+                          e.evt.preventDefault();
+                          e.cancelBubble = true;
+
+                          const ok = window.confirm(t(lang, "deleteConnectionConfirm"));
+                          if (!ok) return;
+
+                          deleteConnection(c.id);
+                          labelSizeCache.current = {};
+                          requestAnimationFrame(() => updateAllEdges());
+                        }}
                       />
 
                       <Group
@@ -1242,27 +1260,52 @@ export default function App() {
 
                 <div className="grid2">
                   <Field label={t(lang, "nameLabel")}>
-                    <input className="input" value={selectedPerson.name ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { name: e.target.value || null })} />
+                    <input
+                      className="input"
+                      value={selectedPerson.name ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { name: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "surnameLabel")}>
-                    <input className="input" value={selectedPerson.surname ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { surname: e.target.value || null })} />
+                    <input
+                      className="input"
+                      value={selectedPerson.surname ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { surname: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "nicknameLabel")} span2>
-                    <input className="input" value={selectedPerson.nickname ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { nickname: e.target.value || null })} />
+                    <input
+                      className="input"
+                      value={selectedPerson.nickname ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { nickname: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "birthdayLabel")}>
-                    <input className="input" type="date" value={selectedPerson.birthday ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { birthday: e.target.value || null })} />
+                    <input
+                      className="input"
+                      type="date"
+                      value={selectedPerson.birthday ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { birthday: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "cityLabel")}>
-                    <input className="input" value={selectedPerson.city ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { city: e.target.value || null })} />
+                    <input
+                      className="input"
+                      value={selectedPerson.city ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { city: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "smokesLabel")}>
-                    <select className="input" value={selectedPerson.smokes} onChange={(e) => updatePerson(selectedPerson.id, { smokes: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.smokes}
+                      onChange={(e) => updatePerson(selectedPerson.id, { smokes: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "unknown")}</option>
                       <option value="yes">{t(lang, "yes")}</option>
                       <option value="no">{t(lang, "no")}</option>
@@ -1270,7 +1313,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "usesLabel")}>
-                    <select className="input" value={selectedPerson.uses} onChange={(e) => updatePerson(selectedPerson.id, { uses: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.uses}
+                      onChange={(e) => updatePerson(selectedPerson.id, { uses: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "unknown")}</option>
                       <option value="yes">{t(lang, "yes")}</option>
                       <option value="no">{t(lang, "no")}</option>
@@ -1278,7 +1325,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "orientationLabel")}>
-                    <select className="input" value={selectedPerson.orientation} onChange={(e) => updatePerson(selectedPerson.id, { orientation: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.orientation}
+                      onChange={(e) => updatePerson(selectedPerson.id, { orientation: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "ori_unknown")}</option>
                       <option value="girls">{t(lang, "ori_girls")}</option>
                       <option value="boys">{t(lang, "ori_boys")}</option>
@@ -1287,7 +1338,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "financeLabel")}>
-                    <select className="input" value={selectedPerson.finance} onChange={(e) => updatePerson(selectedPerson.id, { finance: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.finance}
+                      onChange={(e) => updatePerson(selectedPerson.id, { finance: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "fin_unknown")}</option>
                       <option value="low">{t(lang, "fin_low")}</option>
                       <option value="middle">{t(lang, "fin_middle")}</option>
@@ -1296,7 +1351,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "relationshipStatusLabel")}>
-                    <select className="input" value={selectedPerson.relationshipStatus} onChange={(e) => updatePerson(selectedPerson.id, { relationshipStatus: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.relationshipStatus}
+                      onChange={(e) => updatePerson(selectedPerson.id, { relationshipStatus: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "rel_unknown")}</option>
                       <option value="single">{t(lang, "rel_single")}</option>
                       <option value="dating">{t(lang, "rel_dating")}</option>
@@ -1307,7 +1366,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "subcultureLabel")} span2>
-                    <select className="input" value={selectedPerson.subculture} onChange={(e) => updatePerson(selectedPerson.id, { subculture: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.subculture}
+                      onChange={(e) => updatePerson(selectedPerson.id, { subculture: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "sub_unknown")}</option>
                       <option value="normal">{t(lang, "sub_normal")}</option>
                       <option value="oldmoney">{t(lang, "sub_oldmoney")}</option>
@@ -1341,15 +1404,29 @@ export default function App() {
 
                 <div className="grid2">
                   <Field label={t(lang, "heightLabel")}>
-                    <input className="input" inputMode="numeric" value={selectedPerson.heightCm ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { heightCm: parseNumOrNull(e.target.value) })} />
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      value={selectedPerson.heightCm ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { heightCm: parseNumOrNull(e.target.value) })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "weightLabel")}>
-                    <input className="input" inputMode="numeric" value={selectedPerson.weightKg ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { weightKg: parseNumOrNull(e.target.value) })} />
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      value={selectedPerson.weightKg ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { weightKg: parseNumOrNull(e.target.value) })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "bodyTypeLabel")}>
-                    <select className="input" value={selectedPerson.bodyType} onChange={(e) => updatePerson(selectedPerson.id, { bodyType: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.bodyType}
+                      onChange={(e) => updatePerson(selectedPerson.id, { bodyType: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "body_unknown")}</option>
                       <option value="slim">{t(lang, "body_slim")}</option>
                       <option value="average">{t(lang, "body_average")}</option>
@@ -1359,7 +1436,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "eyeColorLabel")}>
-                    <select className="input" value={selectedPerson.eyeColor} onChange={(e) => updatePerson(selectedPerson.id, { eyeColor: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.eyeColor}
+                      onChange={(e) => updatePerson(selectedPerson.id, { eyeColor: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "eye_unknown")}</option>
                       <option value="brown">{t(lang, "eye_brown")}</option>
                       <option value="blue">{t(lang, "eye_blue")}</option>
@@ -1371,7 +1452,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "hairLengthLabel")}>
-                    <select className="input" value={selectedPerson.hairLength} onChange={(e) => updatePerson(selectedPerson.id, { hairLength: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.hairLength}
+                      onChange={(e) => updatePerson(selectedPerson.id, { hairLength: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "hl_unknown")}</option>
                       <option value="short">{t(lang, "hl_short")}</option>
                       <option value="medium">{t(lang, "hl_medium")}</option>
@@ -1382,7 +1467,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "hairStyleLabel")}>
-                    <select className="input" value={selectedPerson.hairStyle} onChange={(e) => updatePerson(selectedPerson.id, { hairStyle: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.hairStyle}
+                      onChange={(e) => updatePerson(selectedPerson.id, { hairStyle: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "hs_unknown")}</option>
                       <option value="straight">{t(lang, "hs_straight")}</option>
                       <option value="wavy">{t(lang, "hs_wavy")}</option>
@@ -1396,7 +1485,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "hairColorLabel")}>
-                    <select className="input" value={selectedPerson.hairColor} onChange={(e) => updatePerson(selectedPerson.id, { hairColor: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.hairColor}
+                      onChange={(e) => updatePerson(selectedPerson.id, { hairColor: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "hc_unknown")}</option>
                       <option value="blonde">{t(lang, "hc_blonde")}</option>
                       <option value="brown">{t(lang, "hc_brown")}</option>
@@ -1409,7 +1502,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "tattoosLabel")}>
-                    <select className="input" value={selectedPerson.tattoos} onChange={(e) => updatePerson(selectedPerson.id, { tattoos: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.tattoos}
+                      onChange={(e) => updatePerson(selectedPerson.id, { tattoos: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "unknown")}</option>
                       <option value="yes">{t(lang, "yes")}</option>
                       <option value="no">{t(lang, "no")}</option>
@@ -1417,7 +1514,11 @@ export default function App() {
                   </Field>
 
                   <Field label={t(lang, "piercingLabel")}>
-                    <select className="input" value={selectedPerson.piercing} onChange={(e) => updatePerson(selectedPerson.id, { piercing: e.target.value as any })}>
+                    <select
+                      className="input"
+                      value={selectedPerson.piercing}
+                      onChange={(e) => updatePerson(selectedPerson.id, { piercing: e.target.value as any })}
+                    >
                       <option value="unknown">{t(lang, "unknown")}</option>
                       <option value="yes">{t(lang, "yes")}</option>
                       <option value="no">{t(lang, "no")}</option>
@@ -1432,15 +1533,27 @@ export default function App() {
 
                 <div className="grid2">
                   <Field label={t(lang, "phoneLabel")}>
-                    <input className="input" value={selectedPerson.phone ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { phone: e.target.value || null })} />
+                    <input
+                      className="input"
+                      value={selectedPerson.phone ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { phone: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "emailLabel")}>
-                    <input className="input" value={selectedPerson.email ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { email: e.target.value || null })} />
+                    <input
+                      className="input"
+                      value={selectedPerson.email ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { email: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "occupationLabel")} span2>
-                    <input className="input" value={selectedPerson.occupation ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { occupation: e.target.value || null })} />
+                    <input
+                      className="input"
+                      value={selectedPerson.occupation ?? ""}
+                      onChange={(e) => updatePerson(selectedPerson.id, { occupation: e.target.value || null })}
+                    />
                   </Field>
 
                   <Field label={t(lang, "tagsLabel")} span2>
@@ -1460,8 +1573,18 @@ export default function App() {
                 <div className="socialList">
                   {selectedPerson.socials.map((s) => (
                     <div className="socialRow" key={s.id}>
-                      <input className="input" placeholder={t(lang, "type")} value={s.type} onChange={(e) => updateSocial(selectedPerson.id, s.id, { type: e.target.value })} />
-                      <input className="input" placeholder={t(lang, "value")} value={s.value} onChange={(e) => updateSocial(selectedPerson.id, s.id, { value: e.target.value })} />
+                      <input
+                        className="input"
+                        placeholder={t(lang, "type")}
+                        value={s.type}
+                        onChange={(e) => updateSocial(selectedPerson.id, s.id, { type: e.target.value })}
+                      />
+                      <input
+                        className="input"
+                        placeholder={t(lang, "value")}
+                        value={s.value}
+                        onChange={(e) => updateSocial(selectedPerson.id, s.id, { value: e.target.value })}
+                      />
                       <div className="socialActions">
                         {isLinkish(s.value) && (
                           <button className="miniBtn" onClick={() => openExternal(s.value)} title="Open link">
@@ -1517,6 +1640,10 @@ export default function App() {
               <ChoiceButton active={relKind === "acquaintance"} onClick={() => setRelKind("acquaintance")} label={t(lang, "acquaintance")} />
               <ChoiceButton active={relKind === "friend"} onClick={() => setRelKind("friend")} label={t(lang, "friend")} />
               <ChoiceButton active={relKind === "best_friend"} onClick={() => setRelKind("best_friend")} label={t(lang, "bestFriend")} />
+
+              {/* ✅ NEW */}
+              <ChoiceButton active={relKind === "in_relationship"} onClick={() => setRelKind("in_relationship")} label={t(lang, "inRelationship")} />
+
               <ChoiceButton active={relKind === "family"} onClick={() => setRelKind("family")} label={t(lang, "family")} />
             </div>
 

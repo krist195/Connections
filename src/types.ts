@@ -60,7 +60,8 @@ export type HairColor =
   | "colored"
   | "other";
 
-export type ConnectionKind = "acquaintance" | "friend" | "best_friend" | "family";
+// ✅ добавили in_relationship
+export type ConnectionKind = "acquaintance" | "friend" | "best_friend" | "family" | "in_relationship";
 export type FamilyRole = "brother" | "sister" | "mother" | "father";
 
 export interface Vec2 {

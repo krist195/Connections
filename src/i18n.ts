@@ -170,12 +170,19 @@ const RU = {
   friend: "Друг",
   bestFriend: "Лучший друг",
   family: "Семья",
+
+  // ✅ NEW
+  inRelationship: "В отношениях",
+
   chooseRole: "Кто это в семье?",
   brother: "Брат",
   sister: "Сестра",
   mother: "Мама",
   father: "Отец",
-  create: "Создать"
+  create: "Создать",
+
+  // ✅ NEW
+  deleteConnectionConfirm: "Удалить эту связь?"
 } as const;
 
 const EN: Record<keyof typeof RU, string> = {
@@ -347,12 +354,19 @@ const EN: Record<keyof typeof RU, string> = {
   friend: "Friend",
   bestFriend: "Best friend",
   family: "Family",
+
+  // ✅ NEW
+  inRelationship: "In relationship",
+
   chooseRole: "Family role",
   brother: "Brother",
   sister: "Sister",
   mother: "Mother",
   father: "Father",
-  create: "Create"
+  create: "Create",
+
+  // ✅ NEW
+  deleteConnectionConfirm: "Delete this connection?"
 };
 
 export type I18nKey = keyof typeof RU;

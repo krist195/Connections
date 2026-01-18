@@ -81,6 +81,7 @@ function connectionColor(kind: ConnectionKind, role?: FamilyRole) {
   if (kind === "acquaintance") return "#a855f7";
   if (kind === "friend") return "#38bdf8";
   if (kind === "best_friend") return "#22c55e";
+  if (kind === "in_relationship") return "#ec4899"; // ✅ NEW (pink)
   if (role === "mother") return "#ef4444";
   if (role === "father") return "#f59e0b";
   if (role === "brother") return "#fb923c";
@@ -258,6 +259,9 @@ type StoreState = {
   clearPendingConnection: () => void;
   connectionExistsBetween: (a: string, b: string) => boolean;
   addConnection: (from: string, to: string, kind: ConnectionKind, role?: FamilyRole) => void;
+
+  // ✅ NEW
+  deleteConnection: (connectionId: string) => void;
 };
 
 function makeUntitledTab(language: Lang): TabState {
@@ -703,6 +707,20 @@ export const useStore = create<StoreState>((set, get) => {
         };
 
         file.connections.push(c);
+        touch(file);
+
+        const next = updateActiveTab(s, { file, dirty: true });
+        return next;
+      }),
+
+    // ✅ NEW: удалить связь по id
+    deleteConnection: (connectionId) =>
+      set((s) => {
+        const file = structuredClone(s.file);
+        const before = file.connections.length;
+        file.connections = file.connections.filter((c) => c.id !== connectionId);
+        if (file.connections.length === before) return s;
+
         touch(file);
 
         const next = updateActiveTab(s, { file, dirty: true });
