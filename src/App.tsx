@@ -4,10 +4,12 @@ import { Stage, Layer, Group, Circle, Line, Arc, Rect, Text } from "react-konva"
 import { useStore } from "./store";
 import { t } from "./i18n";
 import type { ConnectionKind, FamilyRole, Person, Connection } from "./types";
+import type { SessionState } from "./store";
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
+
 function hash01(str: string) {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) {
@@ -16,10 +18,21 @@ function hash01(str: string) {
   }
   return (h >>> 0) / 4294967295;
 }
+
 function isLinkish(value: string) {
   const v = value.trim();
   return v.startsWith("http://") || v.startsWith("https://");
 }
+
+/** ✅ надежный замер текста */
+const measureTextPx = (() => {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d")!;
+  return (text: string, font: string) => {
+    ctx.font = font;
+    return ctx.measureText(text).width;
+  };
+})();
 
 type TraitSeg = { color: string; rotation: number; angle: number; opacity: number };
 function traitSegments(p: Person, selected: boolean): TraitSeg[] {
@@ -35,10 +48,7 @@ function connectionLabel(lang: "ru" | "en", c: Connection) {
   if (c.kind === "family") {
     const role = c.familyRole;
     if (!role) return t(lang, "family");
-    const roleKey =
-      role === "brother" ? "brother" :
-      role === "sister" ? "sister" :
-      role === "mother" ? "mother" : "father";
+    const roleKey = role === "brother" ? "brother" : role === "sister" ? "sister" : role === "mother" ? "mother" : "father";
     return `${t(lang, "family")} — ${t(lang, roleKey as any)}`;
   }
   if (c.kind === "acquaintance") return t(lang, "acquaintance");
@@ -46,11 +56,29 @@ function connectionLabel(lang: "ru" | "en", c: Connection) {
   return t(lang, "bestFriend");
 }
 
-function displayName(lang: "ru" | "en", p: Person) {
+type LabelMode = "none" | "full" | "nick";
+
+function fullNameOrUnknown(lang: "ru" | "en", p: Person) {
   const name = (p.name ?? "").trim();
   const sur = (p.surname ?? "").trim();
   const full = `${name} ${sur}`.trim();
   return full.length ? full : t(lang, "unknown");
+}
+function nickOrEmpty(p: Person) {
+  const n = (p.nickname ?? "").trim();
+  return n.length ? n : "";
+}
+function labelForPerson(lang: "ru" | "en", p: Person, mode: LabelMode) {
+  if (mode === "none") return "";
+  if (mode === "nick") {
+    const n = nickOrEmpty(p);
+    if (n) return n;
+    return fullNameOrUnknown(lang, p);
+  }
+  const full = fullNameOrUnknown(lang, p);
+  if (full !== t(lang, "unknown")) return full;
+  const n = nickOrEmpty(p);
+  return n || t(lang, "unknown");
 }
 
 function parseNumOrNull(s: string): number | null {
@@ -60,14 +88,37 @@ function parseNumOrNull(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function basename(p: string) {
+  const s = p.replace(/\\/g, "/");
+  const parts = s.split("/");
+  return parts[parts.length - 1] || s;
+}
+
+declare global {
+  interface Window {
+    api: {
+      openFile: () => Promise<{ path: string; data: string } | null>;
+      saveFile: (path: string, data: string) => Promise<void>;
+      saveFileAs: (data: string) => Promise<string | null>;
+      openExternal: (url: string) => Promise<void>;
+
+      readFileByPath: (path: string) => Promise<{ path: string; data: string } | null>;
+
+      quitApp: () => Promise<void>;
+      onCloseRequested: (cb: () => void) => void;
+    };
+  }
+}
+
 export default function App() {
+  // active tab mirrors
   const file = useStore((s) => s.file);
   const filePath = useStore((s) => s.filePath);
-
-  const setFileFromDisk = useStore((s) => s.setFileFromDisk);
-  const setFilePath = useStore((s) => s.setFilePath);
+  const dirty = useStore((s) => s.dirty);
 
   const newFile = useStore((s) => s.newFile);
+  const openFileFromDisk = useStore((s) => s.openFileFromDisk);
+  const markSaved = useStore((s) => s.markSaved);
   const setLanguage = useStore((s) => s.setLanguage);
 
   const addPersonAt = useStore((s) => s.addPersonAt);
@@ -95,12 +146,18 @@ export default function App() {
 
   const setViewport = useStore((s) => s.setViewport);
 
-  // multi-select
   const multiSelectedIds = useStore((s) => s.multiSelectedIds);
   const setMultiSelected = useStore((s) => s.setMultiSelected);
   const toggleMultiSelected = useStore((s) => s.toggleMultiSelected);
   const clearMultiSelected = useStore((s) => s.clearMultiSelected);
   const deleteManyPeople = useStore((s) => s.deleteManyPeople);
+
+  // tabs
+  const tabs = useStore((s) => s.tabs);
+  const activeTabId = useStore((s) => s.activeTabId);
+  const switchTab = useStore((s) => s.switchTab);
+  const closeTab = useStore((s) => s.closeTab);
+  const setSession = useStore((s) => s.setSession);
 
   const lang = file.meta.language;
   const peopleCount = Object.keys(file.people).length;
@@ -109,8 +166,47 @@ export default function App() {
   const selectedPerson: Person | null = selectedId ? file.people[selectedId] ?? null : null;
 
   const [panelOpen, setPanelOpen] = useState(true);
-  const [showNames, setShowNames] = useState(true);
+
+  // label mode persisted locally
+  const [labelMode, setLabelMode] = useState<LabelMode>(() => {
+    const v = (localStorage.getItem("labelMode") as LabelMode | null) ?? "full";
+    return v === "none" || v === "full" || v === "nick" ? v : "full";
+  });
+  useEffect(() => {
+    localStorage.setItem("labelMode", labelMode);
+  }, [labelMode]);
+
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  // ---------- session restore/save ----------
+  const sessionKey = "connections.session.v1";
+
+  useEffect(() => {
+    // restore once
+    try {
+      const raw = localStorage.getItem(sessionKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as SessionState;
+      if (!parsed || parsed.version !== 1) return;
+      setSession(parsed);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const saveSessionTimer = useRef<number | null>(null);
+  useEffect(() => {
+    // debounce session save
+    if (saveSessionTimer.current) window.clearTimeout(saveSessionTimer.current);
+    saveSessionTimer.current = window.setTimeout(() => {
+      try {
+        const sess: SessionState = { version: 1, activeTabId, tabs };
+        localStorage.setItem(sessionKey, JSON.stringify(sess));
+      } catch {}
+    }, 350);
+    return () => {
+      if (saveSessionTimer.current) window.clearTimeout(saveSessionTimer.current);
+    };
+  }, [tabs, activeTabId]);
 
   useEffect(() => {
     const onCtx = (e: MouseEvent) => e.preventDefault();
@@ -118,7 +214,6 @@ export default function App() {
     return () => window.removeEventListener("contextmenu", onCtx);
   }, []);
 
-  // keyboard
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
@@ -137,7 +232,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [multiSelectedIds.length, bulkDeleteOpen, clearMultiSelected]);
 
-  // canvas size
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 900, h: 600 });
   useEffect(() => {
@@ -151,7 +245,6 @@ export default function App() {
     return () => ro.disconnect();
   }, []);
 
-  // refs
   const layerRef = useRef<Konva.Layer | null>(null);
   const worldRef = useRef<Konva.Group | null>(null);
 
@@ -162,7 +255,10 @@ export default function App() {
   const labelGroupRefs = useRef<Record<string, Konva.Group>>({});
   const labelRectRefs = useRef<Record<string, Konva.Rect>>({});
   const labelTextRefs = useRef<Record<string, Konva.Text>>({});
-  const labelSizeCache = useRef<Record<string, { w: number; h: number }>>({});
+  const labelSizeCache = useRef<Record<string, { w: number; h: number; text: string }>>({});
+
+  /** ✅ стаб points массивы */
+  const stableLinePointsRef = useRef<Record<string, number[]>>({});
 
   const selectionRectRef = useRef<Konva.Rect | null>(null);
   const marqueeRef = useRef<{ active: boolean; start: { x: number; y: number }; end: { x: number; y: number } }>({
@@ -178,15 +274,21 @@ export default function App() {
     fileRef.current = file;
   }, [file]);
 
-  // clear label cache only when language changes OR connections set changes
+  const langRef = useRef<"ru" | "en">(lang);
+  useEffect(() => {
+    langRef.current = lang;
+    labelSizeCache.current = {};
+  }, [lang]);
+
   useEffect(() => {
     labelSizeCache.current = {};
-  }, [lang, connectionsCount]);
+  }, [connectionsCount]);
 
-  const connById = useMemo(() => {
-    const m: Record<string, (typeof file.connections)[number]> = {};
+  const connByIdRef = useRef<Record<string, Connection>>({});
+  useEffect(() => {
+    const m: Record<string, Connection> = {};
     for (const c of file.connections) m[c.id] = c;
-    return m;
+    connByIdRef.current = m;
   }, [file.connections]);
 
   const adj = useMemo(() => {
@@ -206,21 +308,27 @@ export default function App() {
   }
 
   function ensureLabelSize(connId: string, textValue: string) {
-    if (labelSizeCache.current[connId]) return;
-
     const rect = labelRectRefs.current[connId];
     const text = labelTextRefs.current[connId];
     if (!rect || !text) return;
 
     const pad = 6;
+    const fontSize = 12;
+    const fontFamily = "Segoe UI Variable, Segoe UI, Arial";
+    const font = `${fontSize}px ${fontFamily}`;
+
+    const measured = Math.ceil(measureTextPx(textValue, font));
+    const w = Math.max(52, measured + pad * 2 + 10);
+    const h = Math.ceil(fontSize * 1.35 + pad * 2);
+
+    const cached = labelSizeCache.current[connId];
+    if (cached && cached.w === w && cached.h === h && cached.text === textValue) return;
+
     text.text(textValue);
     text.padding(pad);
-    text.fontSize(12);
-    text.fontFamily("Segoe UI Variable, Segoe UI, Arial");
+    text.fontSize(fontSize);
+    text.fontFamily(fontFamily);
     text.fill("#e5e7eb");
-
-    const w = Math.ceil(text.getTextWidth() + pad * 2);
-    const h = Math.ceil(text.getTextHeight() + pad * 2);
 
     rect.width(w);
     rect.height(h);
@@ -233,11 +341,11 @@ export default function App() {
     text.verticalAlign("middle");
     text.position({ x: -w / 2, y: -h / 2 });
 
-    labelSizeCache.current[connId] = { w, h };
+    labelSizeCache.current[connId] = { w, h, text: textValue };
   }
 
   function updateEdgeGeometry(connId: string) {
-    const c = connById[connId] ?? fileRef.current.connections.find((x) => x.id === connId);
+    const c = connByIdRef.current[connId] ?? fileRef.current.connections.find((x) => x.id === connId);
     if (!c) return;
 
     const line = lineRefs.current[connId];
@@ -247,7 +355,13 @@ export default function App() {
     const b = endpoint(c.to);
     if (!a || !b) return;
 
-    if (line) line.points([a.x, a.y, b.x, b.y]);
+    const pts = stableLinePointsRef.current[connId] ?? (stableLinePointsRef.current[connId] = [a.x, a.y, b.x, b.y]);
+    pts[0] = a.x;
+    pts[1] = a.y;
+    pts[2] = b.x;
+    pts[3] = b.y;
+
+    if (line) line.points(pts);
 
     if (group) {
       const mx = (a.x + b.x) / 2;
@@ -259,7 +373,7 @@ export default function App() {
       let ang = (Math.atan2(dy, dx) * 180) / Math.PI;
       if (ang > 90 || ang < -90) ang += 180;
 
-      const labelText = connectionLabel(lang, c);
+      const labelText = connectionLabel(langRef.current, c);
       ensureLabelSize(connId, labelText);
 
       group.position({ x: mx, y: my });
@@ -283,41 +397,60 @@ export default function App() {
     requestAnimationFrame(() => updateAllEdges());
   }, [peopleCount, connectionsCount, lang]);
 
-  // floating effect
   const floatEnabled = peopleCount <= 900 && connectionsCount <= 1800;
+  const floatEnabledRef = useRef<boolean>(floatEnabled);
   useEffect(() => {
-    const layer = layerRef.current;
-    if (!layer) return;
+    floatEnabledRef.current = floatEnabled;
+  }, [floatEnabled]);
 
-    const anim = new Konva.Animation((frame) => {
-      if (!floatEnabled) return;
+  /** ✅ ОДНА анимация на всю жизнь */
+  useEffect(() => {
+    let anim: Konva.Animation | null = null;
+    let stopped = false;
 
-      const time = frame?.time ?? performance.now();
-      const f = fileRef.current;
-
-      for (const id of Object.keys(f.people)) {
-        const b = bubbleRefs.current[id];
-        if (!b) continue;
-
-        if (draggingRef.current.has(id)) {
-          if (b.x() !== 0 || b.y() !== 0) b.position({ x: 0, y: 0 });
-          continue;
-        }
-
-        const seed = hash01(id) * 10;
-        const ox = Math.sin(time / 900 + seed) * 4.2;
-        const oy = Math.cos(time / 980 + seed * 1.7) * 3.8;
-        b.position({ x: ox, y: oy });
+    const start = () => {
+      if (stopped) return;
+      const layer = layerRef.current;
+      if (!layer) {
+        requestAnimationFrame(start);
+        return;
       }
 
-      for (const c of f.connections) updateEdgeGeometry(c.id);
-    }, layer);
+      anim = new Konva.Animation((frame) => {
+        if (!floatEnabledRef.current) return;
 
-    anim.start();
-    return () => anim.stop();
-  }, [floatEnabled, connById, lang]);
+        const time = frame?.time ?? performance.now();
+        const f = fileRef.current;
 
-  // pan/zoom: FIX jitter -> commit viewport only if moved enough
+        for (const id of Object.keys(f.people)) {
+          const b = bubbleRefs.current[id];
+          if (!b) continue;
+
+          if (draggingRef.current.has(id)) {
+            if (b.x() !== 0 || b.y() !== 0) b.position({ x: 0, y: 0 });
+            continue;
+          }
+
+          const seed = hash01(id) * 10;
+          const ox = Math.sin(time / 900 + seed) * 4.2;
+          const oy = Math.cos(time / 980 + seed * 1.7) * 3.8;
+          b.position({ x: ox, y: oy });
+        }
+
+        for (const c of f.connections) updateEdgeGeometry(c.id);
+      }, layer);
+
+      anim.start();
+    };
+
+    start();
+
+    return () => {
+      stopped = true;
+      if (anim) anim.stop();
+    };
+  }, []);
+
   const panState = useRef<{
     active: boolean;
     moved: boolean;
@@ -373,15 +506,19 @@ export default function App() {
     return ids;
   }
 
+  const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
+  const [linkTo, setLinkTo] = useState<{ x: number; y: number } | null>(null);
+
   function onStageMouseDown(e: any) {
-    const stage = e.target.getStage();
+    const stage: Konva.Stage | null = e.target?.getStage?.() ?? null;
+    if (!stage) return;
+
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
     if (linkingFrom) return;
 
     const ctrl = !!e.evt.ctrlKey;
 
-    // ctrl + drag on empty space => marquee select
     if (ctrl && e.target === stage) {
       const wpos = worldFromScreen(pointer);
       marqueeRef.current.active = true;
@@ -392,12 +529,10 @@ export default function App() {
       return;
     }
 
-    // normal click on empty space: clear selection states (NO viewport write)
     if (e.target === stage) {
       setSelected(null);
       if (multiSelectedIds.length > 0) clearMultiSelected();
 
-      // start pan (but we won't commit if not moved)
       const w = worldRef.current;
       if (!w) return;
       panState.current = {
@@ -412,7 +547,9 @@ export default function App() {
   }
 
   function onStageMouseMove(e: any) {
-    const stage = e.target.getStage();
+    const stage: Konva.Stage | null = e.target?.getStage?.() ?? null;
+    if (!stage) return;
+
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
 
@@ -468,7 +605,6 @@ export default function App() {
       const moved = panState.current.moved;
       panState.current.active = false;
 
-      // commit viewport ONLY if actually moved
       if (moved) {
         const w = worldRef.current;
         if (w) setViewport({ x: w.x(), y: w.y(), scale: w.scaleX() });
@@ -483,7 +619,10 @@ export default function App() {
 
   function onWheel(e: any) {
     e.evt.preventDefault();
-    const stage = e.target.getStage();
+
+    const stage: Konva.Stage | null = e.target?.getStage?.() ?? null;
+    if (!stage) return;
+
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
 
@@ -512,53 +651,6 @@ export default function App() {
     setViewport({ x: newPos.x, y: newPos.y, scale: newScale });
   }
 
-  function resetView() {
-    const w = worldRef.current;
-    if (w) {
-      w.position({ x: 0, y: 0 });
-      w.scale({ x: 1, y: 1 });
-      w.getLayer()?.batchDraw();
-    }
-    setViewport({ x: 0, y: 0, scale: 1 });
-  }
-
-  function fitView() {
-    const arr = Object.values(fileRef.current.people);
-    if (arr.length === 0) return resetView();
-
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of arr) {
-      minX = Math.min(minX, p.position.x);
-      minY = Math.min(minY, p.position.y);
-      maxX = Math.max(maxX, p.position.x);
-      maxY = Math.max(maxY, p.position.y);
-    }
-
-    const padding = 140;
-    const wWorld = (maxX - minX) + padding * 2;
-    const hWorld = (maxY - minY) + padding * 2;
-
-    const scale = clamp(Math.min(canvasSize.w / wWorld, canvasSize.h / hWorld), 0.25, 1.6);
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-
-    const x = canvasSize.w / 2 - cx * scale;
-    const y = canvasSize.h / 2 - cy * scale;
-
-    const w = worldRef.current;
-    if (w) {
-      w.position({ x, y });
-      w.scale({ x: scale, y: scale });
-      w.getLayer()?.batchDraw();
-    }
-
-    setViewport({ x, y, scale });
-  }
-
-  // Linking (Shift + drag)
-  const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
-  const [linkTo, setLinkTo] = useState<{ x: number; y: number } | null>(null);
-
   const [relKind, setRelKind] = useState<ConnectionKind>("acquaintance");
   const [familyRole, setFamilyRole] = useState<FamilyRole>("brother");
 
@@ -582,11 +674,11 @@ export default function App() {
     if (relKind === "family") addConnection(from, to, relKind, familyRole);
     else addConnection(from, to, relKind);
 
+    labelSizeCache.current = {};
     clearPendingConnection();
     requestAnimationFrame(() => updateAllEdges());
   }
 
-  // background parallax
   const parallax = useMemo(() => {
     const px = Math.round(file.viewport.x * 0.03);
     const py = Math.round(file.viewport.y * 0.03);
@@ -604,7 +696,8 @@ export default function App() {
     try {
       const parsed = JSON.parse(res.data);
       if (!parsed?.meta?.app || parsed.meta.app !== "Connections") throw new Error("bad");
-      setFileFromDisk(parsed, res.path);
+      openFileFromDisk(parsed, res.path);
+      labelSizeCache.current = {};
       requestAnimationFrame(() => updateAllEdges());
     } catch {
       alert(t(lang, "invalidFile"));
@@ -615,21 +708,27 @@ export default function App() {
     const data = JSON.stringify(fileRef.current, null, 2);
     if (filePath) {
       await window.api.saveFile(filePath, data);
+      markSaved(filePath);
       return;
     }
     const p = await window.api.saveFileAs(data);
-    if (p) setFilePath(p);
+    if (p) {
+      markSaved(p);
+    }
   }
 
   async function onSaveAs() {
     const data = JSON.stringify(fileRef.current, null, 2);
     const p = await window.api.saveFileAs(data);
-    if (p) setFilePath(p);
+    if (p) {
+      markSaved(p);
+    }
   }
 
   const peopleArray = useMemo(() => Object.values(file.people), [file.people]);
 
-  const namesOpacity = !showNames ? 0 : (file.viewport.scale < 0.55 ? 0 : file.viewport.scale < 0.75 ? 0.7 : 1);
+  const showLabel = labelMode !== "none";
+  const namesOpacity = !showLabel ? 0 : (file.viewport.scale < 0.55 ? 0 : file.viewport.scale < 0.75 ? 0.7 : 1);
   const edgeLabelOpacity = file.viewport.scale < 0.55 ? 0 : file.viewport.scale < 0.7 ? 0.6 : 1;
 
   const multiSet = useMemo(() => new Set(multiSelectedIds), [multiSelectedIds]);
@@ -638,7 +737,11 @@ export default function App() {
     return tags.join(", ");
   }
   function stringToTags(s: string) {
-    return s.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 50);
+    return s
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, 50);
   }
 
   function doBulkDelete() {
@@ -648,25 +751,102 @@ export default function App() {
     setBulkDeleteOpen(false);
   }
 
+  // ---------- close handling ----------
+  const [closePromptOpen, setClosePromptOpen] = useState(false);
+
+  useEffect(() => {
+    window.api.onCloseRequested(() => {
+      const hasDirty = tabs.some((t) => t.dirty);
+      if (hasDirty) setClosePromptOpen(true);
+      else window.api.quitApp();
+    });
+  }, [tabs]);
+
+  async function saveAllTabsOrAbort(): Promise<boolean> {
+    // save sequentially; if user cancels SaveAs -> abort
+    for (const tab of tabs) {
+      if (!tab.dirty) continue;
+
+      const json = JSON.stringify(tab.file, null, 2);
+
+      // if current tab is not the tab we save, we temporarily switch for markSaved updates
+      // easiest: if it's not active, switchTab then save then continue.
+      if (tab.id !== activeTabId) switchTab(tab.id);
+
+      const curPath = useStore.getState().filePath;
+      if (curPath) {
+        await window.api.saveFile(curPath, json);
+        useStore.getState().markSaved(curPath);
+      } else {
+        const p = await window.api.saveFileAs(json);
+        if (!p) return false;
+        useStore.getState().markSaved(p);
+      }
+    }
+    return true;
+  }
+
+  async function onCloseSaveAll() {
+    const ok = await saveAllTabsOrAbort();
+    if (!ok) return; // cancelled
+    setClosePromptOpen(false);
+    await window.api.quitApp();
+  }
+  async function onCloseDontSave() {
+    setClosePromptOpen(false);
+    await window.api.quitApp();
+  }
+
+  // ---------- tabs UI helpers ----------
+  const untitledIndexById = useMemo(() => {
+    let n = 0;
+    const m: Record<string, number> = {};
+    for (const tb of tabs) {
+      if (!tb.filePath) {
+        n += 1;
+        m[tb.id] = n;
+      }
+    }
+    return m;
+  }, [tabs]);
+
+  function tabTitle(tb: any) {
+    if (tb.filePath) return basename(tb.filePath);
+    const idx = untitledIndexById[tb.id] ?? 1;
+    return lang === "ru" ? `Безымянный ${idx}` : `Untitled ${idx}`;
+  }
+
   return (
     <div className="app">
       <div className="topbar">
         <div className="brand">{t(lang, "app")}</div>
 
-        <button className="btn" onClick={() => newFile()}>{t(lang, "new")}</button>
-        <button className="btn" onClick={onOpen}>{t(lang, "open")}</button>
-        <button className="btn" onClick={onSave}>{t(lang, "save")}</button>
-        <button className="btn" onClick={onSaveAs}>{t(lang, "saveAs")}</button>
+        <button className="btn" onClick={() => newFile()}>
+          {t(lang, "new")}
+        </button>
+        <button className="btn" onClick={onOpen}>
+          {t(lang, "open")}
+        </button>
+        <button className="btn" onClick={onSave}>
+          {t(lang, "save")}
+        </button>
+        <button className="btn" onClick={onSaveAs}>
+          {t(lang, "saveAs")}
+        </button>
 
-        <label className="check" title={t(lang, "showNames")}>
-          <input type="checkbox" checked={showNames} onChange={(e) => setShowNames(e.target.checked)} />
-          <span>{t(lang, "showNames")}</span>
-        </label>
+        <div className="labelMode">
+          <span className="muted tiny">{t(lang, "labels")}:</span>
+          <select className="input inputSmall" value={labelMode} onChange={(e) => setLabelMode(e.target.value as any)}>
+            <option value="none">{t(lang, "labelsNone")}</option>
+            <option value="full">{t(lang, "labelsName")}</option>
+            <option value="nick">{t(lang, "labelsNick")}</option>
+          </select>
+        </div>
 
         {multiSelectedIds.length > 0 && (
           <>
             <div className="stat" style={{ marginLeft: 6 }}>
-              {t(lang, "selected", { n: multiSelectedIds.length })}
+              {t(lang, "peopleSelected", { n: multiSelectedIds.length })}
             </div>
             <button className="btn danger" onClick={() => setBulkDeleteOpen(true)}>
               {t(lang, "deleteSelected")}
@@ -686,8 +866,46 @@ export default function App() {
         </button>
 
         <div className="stat">
-          {t(lang, "people")}: {peopleCount} · {t(lang, "connections")}: {connectionsCount}
+          {t(lang, "people")}: {peopleCount} · {t(lang, "connections")}: {connectionsCount} {dirty ? "•" : ""}
         </div>
+      </div>
+
+      {/* ✅ tabs bar */}
+      <div className="tabsBar">
+        {tabs.map((tb) => (
+          <div
+            key={tb.id}
+            className={"tab " + (tb.id === activeTabId ? "active" : "")}
+            onMouseDown={(e) => {
+              // middle click close
+              if ((e as any).button === 1) {
+                e.preventDefault();
+                closeTab(tb.id);
+                return;
+              }
+            }}
+            onClick={() => switchTab(tb.id)}
+            title={tb.filePath ?? ""}
+          >
+            <span className={tb.dirty ? "dirtyDot" : "cleanDot"} />
+            <span className="tabTitle">{tabTitle(tb)}</span>
+            <button
+              className="tabClose"
+              onClick={(e) => {
+                e.stopPropagation();
+                // If dirty -> just close; close prompt only on app exit (как ты просил)
+                closeTab(tb.id);
+              }}
+              title={lang === "ru" ? "Закрыть" : "Close"}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+
+        <button className="tabPlus" onClick={() => newFile()} title={lang === "ru" ? "Новая вкладка" : "New tab"}>
+          +
+        </button>
       </div>
 
       <div className="content">
@@ -700,27 +918,6 @@ export default function App() {
             {panelOpen ? "›" : "‹"}
           </button>
 
-          <div className="canvasControls">
-            <button className="ctl" title={t(lang, "zoomIn")} onClick={() => {
-              const w = worldRef.current; if (!w) return;
-              const ns = clamp(w.scaleX() * 1.12, 0.2, 3);
-              w.scale({ x: ns, y: ns });
-              w.getLayer()?.batchDraw();
-              setViewport({ x: w.x(), y: w.y(), scale: ns });
-            }}>＋</button>
-
-            <button className="ctl" title={t(lang, "zoomOut")} onClick={() => {
-              const w = worldRef.current; if (!w) return;
-              const ns = clamp(w.scaleX() / 1.12, 0.2, 3);
-              w.scale({ x: ns, y: ns });
-              w.getLayer()?.batchDraw();
-              setViewport({ x: w.x(), y: w.y(), scale: ns });
-            }}>－</button>
-
-            <button className="ctl" title={t(lang, "fitView")} onClick={fitView}>⤢</button>
-            <button className="ctl" title={t(lang, "resetView")} onClick={resetView}>⟲</button>
-          </div>
-
           <Stage
             width={canvasSize.w}
             height={canvasSize.h}
@@ -729,7 +926,8 @@ export default function App() {
             onMouseMove={onStageMouseMove}
             onMouseUp={onStageMouseUp}
             onDblClick={(e) => {
-              const stage = e.target.getStage();
+              const stage: Konva.Stage | null = e.target?.getStage?.() ?? null;
+              if (!stage) return;
               const pointer = stage.getPointerPosition();
               if (!pointer) return;
               if (e.evt.ctrlKey) return;
@@ -738,12 +936,10 @@ export default function App() {
               requestAnimationFrame(() => updateAllEdges());
             }}
           >
-            <Layer ref={(r) => (layerRef.current = r)}>
-              <Group ref={(r) => (worldRef.current = r)}>
-
-                {/* selection rectangle */}
+            <Layer ref={(r: Konva.Layer | null) => (layerRef.current = r)}>
+              <Group ref={(r: Konva.Group | null) => (worldRef.current = r)}>
                 <Rect
-                  ref={(r) => (selectionRectRef.current = r)}
+                  ref={(r: Konva.Rect | null) => (selectionRectRef.current = r)}
                   x={0}
                   y={0}
                   width={0}
@@ -756,7 +952,6 @@ export default function App() {
                   listening={false}
                 />
 
-                {/* edges + labels */}
                 {file.connections.map((c) => {
                   const a = file.people[c.from];
                   const b = file.people[c.to];
@@ -764,14 +959,18 @@ export default function App() {
 
                   const labelText = connectionLabel(lang, c);
 
+                  const stablePts =
+                    stableLinePointsRef.current[c.id] ??
+                    (stableLinePointsRef.current[c.id] = [a.position.x, a.position.y, b.position.x, b.position.y]);
+
                   return (
                     <React.Fragment key={c.id}>
                       <Line
-                        ref={(r) => {
+                        ref={(r: Konva.Line | null) => {
                           if (r) lineRefs.current[c.id] = r;
                           else delete lineRefs.current[c.id];
                         }}
-                        points={[a.position.x, a.position.y, b.position.x, b.position.y]}
+                        points={stablePts}
                         stroke={c.color}
                         strokeWidth={3}
                         lineCap="round"
@@ -783,7 +982,7 @@ export default function App() {
                       />
 
                       <Group
-                        ref={(r) => {
+                        ref={(r: Konva.Group | null) => {
                           if (r) labelGroupRefs.current[c.id] = r;
                           else delete labelGroupRefs.current[c.id];
                         }}
@@ -793,7 +992,7 @@ export default function App() {
                         opacity={edgeLabelOpacity}
                       >
                         <Rect
-                          ref={(r) => {
+                          ref={(r: Konva.Rect | null) => {
                             if (r) labelRectRefs.current[c.id] = r;
                             else delete labelRectRefs.current[c.id];
                           }}
@@ -806,7 +1005,7 @@ export default function App() {
                           shadowOpacity={0.25}
                         />
                         <Text
-                          ref={(r) => {
+                          ref={(r: Konva.Text | null) => {
                             if (r) labelTextRefs.current[c.id] = r;
                             else delete labelTextRefs.current[c.id];
                           }}
@@ -820,7 +1019,6 @@ export default function App() {
                   );
                 })}
 
-                {/* temp link line */}
                 {linkingFrom && linkTo && (() => {
                   const a = endpoint(linkingFrom);
                   if (!a) return null;
@@ -837,11 +1035,11 @@ export default function App() {
                   );
                 })()}
 
-                {/* nodes */}
                 {peopleArray.map((p) => {
                   const isSelected = p.id === selectedId;
                   const isMulti = multiSet.has(p.id);
                   const segs = traitSegments(p, isSelected);
+                  const labelText = labelForPerson(lang, p, labelMode);
 
                   return (
                     <Group
@@ -849,7 +1047,7 @@ export default function App() {
                       x={p.position.x}
                       y={p.position.y}
                       draggable={!linkingFrom}
-                      ref={(r) => {
+                      ref={(r: Konva.Group | null) => {
                         if (r) nodeGroupRefs.current[p.id] = r;
                         else delete nodeGroupRefs.current[p.id];
                       }}
@@ -876,28 +1074,28 @@ export default function App() {
                         requestAnimationFrame(() => updateEdgesFor(p.id));
                       }}
                     >
-                      <Text
-                        text={displayName(lang, p)}
-                        x={-80}
-                        y={-66}
-                        width={160}
-                        align="center"
-                        fontSize={13}
-                        fill="rgba(229,231,235,0.92)"
-                        opacity={namesOpacity}
-                        shadowColor="black"
-                        shadowBlur={10}
-                        shadowOpacity={0.55}
-                        listening={false}
-                        perfectDrawEnabled={false}
-                      />
-
                       <Group
-                        ref={(r) => {
+                        ref={(r: Konva.Group | null) => {
                           if (r) bubbleRefs.current[p.id] = r;
                           else delete bubbleRefs.current[p.id];
                         }}
                       >
+                        <Text
+                          text={labelText}
+                          x={-110}
+                          y={-66}
+                          width={220}
+                          align="center"
+                          fontSize={13}
+                          fill="rgba(229,231,235,0.92)"
+                          opacity={namesOpacity}
+                          shadowColor="black"
+                          shadowBlur={10}
+                          shadowOpacity={0.55}
+                          listening={false}
+                          perfectDrawEnabled={false}
+                        />
+
                         {isMulti && (
                           <Circle
                             radius={44}
@@ -939,7 +1137,7 @@ export default function App() {
                         <Circle
                           radius={22}
                           fill="#5b6476"
-                          stroke={isMulti ? "#c4b5fd" : (isSelected ? "#e5e7eb" : "#0b1020")}
+                          stroke={isMulti ? "#c4b5fd" : isSelected ? "#e5e7eb" : "#0b1020"}
                           strokeWidth={2}
                           shadowColor={isSelected ? "#a78bfa" : "#7c3aed"}
                           shadowBlur={isSelected ? 32 : 22}
@@ -950,7 +1148,8 @@ export default function App() {
                               e.cancelBubble = true;
                               setSelected(p.id);
                               setLinkingFrom(p.id);
-                              const stage = e.target.getStage();
+                              const stage: Konva.Stage | null = e.target?.getStage?.() ?? null;
+                              if (!stage) return;
                               const pointer = stage.getPointerPosition();
                               if (pointer) setLinkTo(worldFromScreen(pointer));
                             }
@@ -979,7 +1178,6 @@ export default function App() {
           </Stage>
         </div>
 
-        {/* side panel */}
         <div className={"sidePane " + (panelOpen ? "" : "collapsed")}>
           {!selectedPerson ? (
             <div className="empty">
@@ -988,17 +1186,16 @@ export default function App() {
           ) : (
             <div className="panel">
               <div className="panelHeader">
-                <div className="panelTitle">
-                  {(selectedPerson.name ?? t(lang, "unknown")) + " " + (selectedPerson.surname ?? "")}
-                </div>
+                <div className="panelTitle">{fullNameOrUnknown(lang, selectedPerson)}</div>
                 <button className="btn danger" onClick={() => deletePerson(selectedPerson.id)}>
                   {t(lang, "deletePerson")}
                 </button>
               </div>
 
-              {/* photos */}
+              {/* PHOTOS */}
               <div className="section">
                 <div className="sectionTitle">{t(lang, "photos")}</div>
+
                 <div className="photosRow">
                   {selectedPerson.photos.map((ph, idx) => (
                     <div className="photoCard" key={idx}>
@@ -1042,16 +1239,24 @@ export default function App() {
               {/* BASIC */}
               <div className="section">
                 <div className="sectionTitle">{t(lang, "basicSection")}</div>
+
                 <div className="grid2">
                   <Field label={t(lang, "nameLabel")}>
                     <input className="input" value={selectedPerson.name ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { name: e.target.value || null })} />
                   </Field>
+
                   <Field label={t(lang, "surnameLabel")}>
                     <input className="input" value={selectedPerson.surname ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { surname: e.target.value || null })} />
                   </Field>
+
+                  <Field label={t(lang, "nicknameLabel")} span2>
+                    <input className="input" value={selectedPerson.nickname ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { nickname: e.target.value || null })} />
+                  </Field>
+
                   <Field label={t(lang, "birthdayLabel")}>
                     <input className="input" type="date" value={selectedPerson.birthday ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { birthday: e.target.value || null })} />
                   </Field>
+
                   <Field label={t(lang, "cityLabel")}>
                     <input className="input" value={selectedPerson.city ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { city: e.target.value || null })} />
                   </Field>
@@ -1101,7 +1306,7 @@ export default function App() {
                     </select>
                   </Field>
 
-                  <Field label={t(lang, "subcultureLabel")}>
+                  <Field label={t(lang, "subcultureLabel")} span2>
                     <select className="input" value={selectedPerson.subculture} onChange={(e) => updatePerson(selectedPerson.id, { subculture: e.target.value as any })}>
                       <option value="unknown">{t(lang, "sub_unknown")}</option>
                       <option value="normal">{t(lang, "sub_normal")}</option>
@@ -1133,22 +1338,14 @@ export default function App() {
               {/* APPEARANCE */}
               <div className="section">
                 <div className="sectionTitle">{t(lang, "appearanceSection")}</div>
+
                 <div className="grid2">
                   <Field label={t(lang, "heightLabel")}>
-                    <input
-                      className="input"
-                      inputMode="numeric"
-                      value={selectedPerson.heightCm ?? ""}
-                      onChange={(e) => updatePerson(selectedPerson.id, { heightCm: parseNumOrNull(e.target.value) })}
-                    />
+                    <input className="input" inputMode="numeric" value={selectedPerson.heightCm ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { heightCm: parseNumOrNull(e.target.value) })} />
                   </Field>
+
                   <Field label={t(lang, "weightLabel")}>
-                    <input
-                      className="input"
-                      inputMode="numeric"
-                      value={selectedPerson.weightKg ?? ""}
-                      onChange={(e) => updatePerson(selectedPerson.id, { weightKg: parseNumOrNull(e.target.value) })}
-                    />
+                    <input className="input" inputMode="numeric" value={selectedPerson.weightKg ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { weightKg: parseNumOrNull(e.target.value) })} />
                   </Field>
 
                   <Field label={t(lang, "bodyTypeLabel")}>
@@ -1232,75 +1429,84 @@ export default function App() {
               {/* CONTACTS */}
               <div className="section">
                 <div className="sectionTitle">{t(lang, "contactsSection")}</div>
+
                 <div className="grid2">
                   <Field label={t(lang, "phoneLabel")}>
                     <input className="input" value={selectedPerson.phone ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { phone: e.target.value || null })} />
                   </Field>
+
                   <Field label={t(lang, "emailLabel")}>
                     <input className="input" value={selectedPerson.email ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { email: e.target.value || null })} />
                   </Field>
-                  <Field label={t(lang, "occupationLabel")}>
+
+                  <Field label={t(lang, "occupationLabel")} span2>
                     <input className="input" value={selectedPerson.occupation ?? ""} onChange={(e) => updatePerson(selectedPerson.id, { occupation: e.target.value || null })} />
                   </Field>
-                  <Field label={t(lang, "tagsLabel")}>
+
+                  <Field label={t(lang, "tagsLabel")} span2>
                     <input
                       className="input"
+                      placeholder={t(lang, "tagsPlaceholder")}
                       value={tagsToString(selectedPerson.tags)}
                       onChange={(e) => updatePerson(selectedPerson.id, { tags: stringToTags(e.target.value) })}
-                      placeholder={t(lang, "tagsPlaceholder")}
                     />
                   </Field>
                 </div>
-              </div>
 
-              {/* Socials */}
-              <div className="section">
-                <div className="sectionTitle">{t(lang, "socials")}</div>
+                <div className="subNote muted tiny">{t(lang, "linksOpenExternally")}</div>
+
+                <div className="sectionSubTitle">{t(lang, "socials")}</div>
 
                 <div className="socialList">
                   {selectedPerson.socials.map((s) => (
                     <div className="socialRow" key={s.id}>
-                      <input className="input" value={s.type} onChange={(e) => updateSocial(selectedPerson.id, s.id, { type: e.target.value })} placeholder={t(lang, "type")} />
-                      <input className="input" value={s.value} onChange={(e) => updateSocial(selectedPerson.id, s.id, { value: e.target.value })} placeholder={t(lang, "value")} />
-                      <button className="miniBtn" onClick={() => removeSocial(selectedPerson.id, s.id)}>{t(lang, "remove")}</button>
+                      <input className="input" placeholder={t(lang, "type")} value={s.type} onChange={(e) => updateSocial(selectedPerson.id, s.id, { type: e.target.value })} />
+                      <input className="input" placeholder={t(lang, "value")} value={s.value} onChange={(e) => updateSocial(selectedPerson.id, s.id, { value: e.target.value })} />
+                      <div className="socialActions">
+                        {isLinkish(s.value) && (
+                          <button className="miniBtn" onClick={() => openExternal(s.value)} title="Open link">
+                            ↗
+                          </button>
+                        )}
+                        <button className="miniBtn danger" onClick={() => removeSocial(selectedPerson.id, s.id)}>
+                          {t(lang, "remove")}
+                        </button>
+                      </div>
                     </div>
                   ))}
-                </div>
 
-                <AddSocialForm lang={lang} onAdd={(type, value) => addSocial(selectedPerson.id, type, value)} />
-
-                {selectedPerson.socials.length > 0 && (
-                  <div className="socialPreview">
-                    {selectedPerson.socials.map((s) => (
-                      <div key={s.id} className="socialPreviewRow">
-                        <span className="muted">{s.type}:</span>{" "}
-                        {isLinkish(s.value) ? (
-                          <a className="link" href={s.value} onClick={(e) => { e.preventDefault(); openExternal(s.value); }}>
-                            {s.value}
-                          </a>
-                        ) : (
-                          <span className="mono clickable" onClick={() => navigator.clipboard.writeText(s.value)} title="Click to copy">
-                            {s.value}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                    <div className="muted tiny">({t(lang, "linksOpenExternally")})</div>
+                  <div className="socialRow addSocial">
+                    <input className="input" placeholder={t(lang, "type")} id="add_social_type" />
+                    <input className="input" placeholder={t(lang, "value")} id="add_social_value" />
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        const typeEl = document.getElementById("add_social_type") as HTMLInputElement | null;
+                        const valEl = document.getElementById("add_social_value") as HTMLInputElement | null;
+                        const type = typeEl?.value ?? "";
+                        const value = valEl?.value ?? "";
+                        addSocial(selectedPerson.id, type, value);
+                        if (typeEl) typeEl.value = "";
+                        if (valEl) valEl.value = "";
+                      }}
+                    >
+                      {t(lang, "addSocial")}
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
 
-              {/* Notes */}
+              {/* NOTES */}
               <div className="section">
                 <div className="sectionTitle">{t(lang, "notes")}</div>
-                <textarea className="textarea" value={selectedPerson.notes} onChange={(e) => updatePerson(selectedPerson.id, { notes: e.target.value })} placeholder="..." />
+                <textarea className="textarea" value={selectedPerson.notes} onChange={(e) => updatePerson(selectedPerson.id, { notes: e.target.value })} rows={7} />
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Connection modal */}
+      {/* link modal */}
       {pendingConnection && (
         <div className="modalBackdrop" onMouseDown={() => clearPendingConnection()}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -1316,7 +1522,9 @@ export default function App() {
 
             {relKind === "family" && (
               <>
-                <div className="muted" style={{ marginTop: 10 }}>{t(lang, "chooseRole")}</div>
+                <div className="muted" style={{ marginTop: 10 }}>
+                  {t(lang, "chooseRole")}
+                </div>
                 <div className="choiceRow">
                   <ChoiceButton active={familyRole === "brother"} onClick={() => setFamilyRole("brother")} label={t(lang, "brother")} />
                   <ChoiceButton active={familyRole === "sister"} onClick={() => setFamilyRole("sister")} label={t(lang, "sister")} />
@@ -1327,14 +1535,18 @@ export default function App() {
             )}
 
             <div className="modalActions">
-              <button className="btn ghost" onClick={() => clearPendingConnection()}>{t(lang, "cancel")}</button>
-              <button className="btn" onClick={confirmCreateConnection}>{t(lang, "create")}</button>
+              <button className="btn ghost" onClick={() => clearPendingConnection()}>
+                {t(lang, "cancel")}
+              </button>
+              <button className="btn" onClick={confirmCreateConnection}>
+                {t(lang, "create")}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* bulk delete confirm */}
+      {/* bulk delete */}
       {bulkDeleteOpen && (
         <div className="modalBackdrop" onMouseDown={() => setBulkDeleteOpen(false)}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -1342,8 +1554,36 @@ export default function App() {
             <div className="muted">{t(lang, "confirmDeleteBody", { n: multiSelectedIds.length })}</div>
 
             <div className="modalActions" style={{ marginTop: 14 }}>
-              <button className="btn ghost" onClick={() => setBulkDeleteOpen(false)}>{t(lang, "cancel")}</button>
-              <button className="btn danger" onClick={doBulkDelete}>{t(lang, "delete")}</button>
+              <button className="btn ghost" onClick={() => setBulkDeleteOpen(false)}>
+                {t(lang, "cancel")}
+              </button>
+              <button className="btn danger" onClick={doBulkDelete}>
+                {t(lang, "delete")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* close prompt */}
+      {closePromptOpen && (
+        <div className="modalBackdrop" onMouseDown={() => setClosePromptOpen(false)}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modalTitle">{lang === "ru" ? "Есть несохранённые изменения" : "You have unsaved changes"}</div>
+            <div className="muted" style={{ marginTop: 8 }}>
+              {lang === "ru" ? "Сохранить все вкладки перед выходом?" : "Save all tabs before exiting?"}
+            </div>
+
+            <div className="modalActions" style={{ marginTop: 14 }}>
+              <button className="btn ghost" onClick={() => setClosePromptOpen(false)}>
+                {lang === "ru" ? "Отмена" : "Cancel"}
+              </button>
+              <button className="btn ghost" onClick={onCloseDontSave}>
+                {lang === "ru" ? "Не сохранять" : "Don't save"}
+              </button>
+              <button className="btn" onClick={onCloseSaveAll}>
+                {lang === "ru" ? "Сохранить всё" : "Save all"}
+              </button>
             </div>
           </div>
         </div>
@@ -1352,9 +1592,9 @@ export default function App() {
   );
 }
 
-function Field(props: { label: string; children: React.ReactNode }) {
+function Field(props: { label: string; children: React.ReactNode; span2?: boolean }) {
   return (
-    <label className="field">
+    <label className={"field " + (props.span2 ? "span2" : "")}>
       <div className="label">{props.label}</div>
       {props.children}
     </label>
@@ -1366,27 +1606,5 @@ function ChoiceButton(props: { active: boolean; onClick: () => void; label: stri
     <button className={"choiceBtn " + (props.active ? "active" : "")} onClick={props.onClick}>
       {props.label}
     </button>
-  );
-}
-
-function AddSocialForm(props: { lang: "ru" | "en"; onAdd: (type: string, value: string) => void }) {
-  const [type, setType] = useState("");
-  const [value, setValue] = useState("");
-  return (
-    <div className="addSocial">
-      <input className="input" value={type} onChange={(e) => setType(e.target.value)} placeholder={t(props.lang, "type")} />
-      <input className="input" value={value} onChange={(e) => setValue(e.target.value)} placeholder={t(props.lang, "value")} />
-      <button
-        className="btn"
-        onClick={() => {
-          if (!type.trim() && !value.trim()) return;
-          props.onAdd(type, value);
-          setType("");
-          setValue("");
-        }}
-      >
-        {t(props.lang, "addSocial")}
-      </button>
-    </div>
   );
 }

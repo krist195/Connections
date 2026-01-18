@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 let win = null;
+let isQuitting = false;
 
 function createWindow() {
   win = new BrowserWindow({
@@ -21,6 +22,15 @@ function createWindow() {
   // Безопасно запрещаем window.open внутрь приложения
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
+  // ✅ Перехват закрытия окна -> спросить про сохранение в renderer
+  win.on("close", (e) => {
+    if (isQuitting) return;
+    e.preventDefault();
+    try {
+      win.webContents.send("app:close-requested");
+    } catch {}
+  });
+
   const isDev = !app.isPackaged;
 
   if (isDev) {
@@ -36,6 +46,8 @@ function createWindow() {
 
 app.whenReady().then(createWindow);
 
+// ====================== FILE IO ======================
+
 ipcMain.handle("open-file", async () => {
   const { filePaths } = await dialog.showOpenDialog({
     filters: [{ name: "Connections", extensions: ["connections"] }],
@@ -47,6 +59,15 @@ ipcMain.handle("open-file", async () => {
   const p = filePaths[0];
   const data = fs.readFileSync(p, "utf-8");
   return { path: p, data };
+});
+
+ipcMain.handle("read-file-by-path", async (_, filePath) => {
+  try {
+    const data = fs.readFileSync(filePath, "utf-8");
+    return { path: filePath, data };
+  } catch (e) {
+    return null;
+  }
 });
 
 ipcMain.handle("save-file-as", async (_, data) => {
@@ -66,6 +87,8 @@ ipcMain.handle("save-file", async (_, payload) => {
   return true;
 });
 
+// ====================== EXTERNAL LINKS ======================
+
 ipcMain.handle("open-external", async (_, url) => {
   try {
     const u = new URL(url);
@@ -75,4 +98,14 @@ ipcMain.handle("open-external", async (_, url) => {
   } catch {
     return false;
   }
+});
+
+// ====================== APP QUIT ======================
+
+ipcMain.handle("app:quit", async () => {
+  isQuitting = true;
+  try {
+    for (const w of BrowserWindow.getAllWindows()) w.close();
+  } catch {}
+  return true;
 });

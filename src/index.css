@@ -355,3 +355,161 @@ html, body, #root {
   justify-content:flex-end;
   gap:8px;
 }
+
+
+/* FIX: grid fields overlapping */
+.grid2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.field {
+  min-width: 0;
+}
+
+.input,
+.textarea,
+select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* socials rows (если тоже "съезжали") */
+.socialRow,
+.addSocial {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+/* small select in topbar */
+.inputSmall {
+  height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.labelMode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+/* FIX: grid fields overlapping */
+.grid2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.field { min-width: 0; }
+.field.span2 { grid-column: 1 / -1; }
+
+.input,
+.textarea,
+select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* socials rows */
+.socialRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.socialActions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.inputSmall {
+  height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.labelMode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+.grid2{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items:start;
+}
+.field{ min-width:0; }
+.field.span2{ grid-column: 1 / -1; }
+.input, .textarea{ width:100%; box-sizing:border-box; }
+
+/* tabs */
+.tabsBar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 8px 10px;
+  background: rgba(10,14,26,0.55);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  overflow:auto;
+}
+.tab{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.06);
+  color: rgba(229,231,235,0.92);
+  cursor:pointer;
+  user-select:none;
+  white-space:nowrap;
+  transition: 120ms ease;
+  flex: 0 0 auto;
+}
+.tab:hover{ background: rgba(255,255,255,0.08); }
+.tab.active{
+  background: rgba(167,139,250,0.18);
+  box-shadow: 0 0 0 1px rgba(167,139,250,0.22) inset;
+}
+.dirtyDot{
+  width: 8px;height: 8px;border-radius: 50%;
+  background: #fbbf24;
+  box-shadow: 0 0 14px rgba(251,191,36,0.55);
+}
+.cleanDot{
+  width: 8px;height: 8px;border-radius: 50%;
+  background: rgba(255,255,255,0.14);
+}
+.tabTitle{
+  max-width: 220px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.tabClose{
+  margin-left: 6px;
+  width: 22px;height: 22px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: rgba(229,231,235,0.65);
+  cursor:pointer;
+}
+.tab:hover .tabClose{ background: rgba(255,255,255,0.07); }
+.tabClose:hover{ color: rgba(255,255,255,0.92); background: rgba(255,255,255,0.12); }
+.tabPlus{
+  width: 34px;height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  color: rgba(229,231,235,0.9);
+  cursor: pointer;
+}
+.tabPlus:hover{ background: rgba(255,255,255,0.10); }

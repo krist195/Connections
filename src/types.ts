@@ -84,6 +84,7 @@ export interface Person {
   // identity
   name: string | null;
   surname: string | null;
+  nickname: string | null; // NEW
   birthday: string | null;
   city: string | null;
 

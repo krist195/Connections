@@ -14,10 +14,14 @@ const RU = {
 
   hidePanel: "Скрыть панель",
   showPanel: "Показать панель",
-  showNames: "Показывать имена",
 
-  // multi-select
-  selected: "Выбрано: {n}",
+  // labels mode
+  labels: "Подписи",
+  labelsNone: "Ничего",
+  labelsName: "Имя+Фамилия",
+  labelsNick: "Ник",
+
+  peopleSelected: "Выбрано: {n}",
   deleteSelected: "Удалить выбранных",
   clearSelection: "Снять выделение",
   confirmDeleteTitle: "Удалить выбранных?",
@@ -39,6 +43,7 @@ const RU = {
 
   nameLabel: "Имя",
   surnameLabel: "Фамилия",
+  nicknameLabel: "Ник / Прозвище",
   birthdayLabel: "День рождения",
   cityLabel: "Город",
 
@@ -76,7 +81,6 @@ const RU = {
   yes: "Да",
   no: "Нет",
 
-  // relationship status options
   rel_unknown: "Неизвестно",
   rel_single: "Свободен(на)",
   rel_dating: "Встречается",
@@ -84,14 +88,12 @@ const RU = {
   rel_married: "Женат/Замужем",
   rel_complicated: "Сложно",
 
-  // body
   body_unknown: "Неизвестно",
   body_slim: "Худое",
   body_average: "Среднее",
   body_athletic: "Спортивное",
   body_heavy: "Крупное",
 
-  // eye
   eye_unknown: "Неизвестно",
   eye_brown: "Карие",
   eye_blue: "Голубые",
@@ -100,7 +102,6 @@ const RU = {
   eye_hazel: "Ореховые",
   eye_other: "Другое",
 
-  // hair length
   hl_unknown: "Неизвестно",
   hl_short: "Короткие",
   hl_medium: "Средние",
@@ -108,7 +109,6 @@ const RU = {
   hl_very_long: "Очень длинные",
   hl_bald: "Лысый(ая)",
 
-  // hair style
   hs_unknown: "Неизвестно",
   hs_straight: "Прямые",
   hs_wavy: "Волнистые",
@@ -119,7 +119,6 @@ const RU = {
   hs_undercut: "Андеркат",
   hs_other: "Другое",
 
-  // hair color
   hc_unknown: "Неизвестно",
   hc_blonde: "Светлые",
   hc_brown: "Русые",
@@ -129,7 +128,6 @@ const RU = {
   hc_colored: "Окрашенные",
   hc_other: "Другое",
 
-  // Subculture
   sub_unknown: "Неизвестно",
   sub_normal: "Обычный",
   sub_oldmoney: "OldMoney",
@@ -153,25 +151,18 @@ const RU = {
   sub_military: "Милитари",
   sub_skinhead: "Скинхед",
 
-  // Orientation
   ori_unknown: "Неизвестно",
   ori_girls: "По девочкам",
   ori_boys: "По парням",
   ori_both: "По обоим",
 
-  // Finance
   fin_unknown: "Неизвестно",
   fin_low: "Низкий",
   fin_middle: "Средний",
   fin_high: "Высокий",
 
-  // linking
   duplicateConnection: "Связь между этими людьми уже существует.",
   invalidFile: "Неверный файл .connections",
-  zoomIn: "Приблизить",
-  zoomOut: "Отдалить",
-  fitView: "Уместить",
-  resetView: "Сброс",
 
   linkTitle: "Создать связь",
   linkChoose: "Выбери тип связи",
@@ -201,9 +192,13 @@ const EN: Record<keyof typeof RU, string> = {
 
   hidePanel: "Hide panel",
   showPanel: "Show panel",
-  showNames: "Show names",
 
-  selected: "Selected: {n}",
+  labels: "Labels",
+  labelsNone: "None",
+  labelsName: "Name+Surname",
+  labelsNick: "Nickname",
+
+  peopleSelected: "Selected: {n}",
   deleteSelected: "Delete selected",
   clearSelection: "Clear selection",
   confirmDeleteTitle: "Delete selected?",
@@ -225,6 +220,7 @@ const EN: Record<keyof typeof RU, string> = {
 
   nameLabel: "Name",
   surnameLabel: "Surname",
+  nicknameLabel: "Nickname",
   birthdayLabel: "Birthday",
   cityLabel: "City",
 
@@ -344,10 +340,6 @@ const EN: Record<keyof typeof RU, string> = {
 
   duplicateConnection: "A connection between these people already exists.",
   invalidFile: "Invalid .connections file",
-  zoomIn: "Zoom in",
-  zoomOut: "Zoom out",
-  fitView: "Fit",
-  resetView: "Reset",
 
   linkTitle: "Create connection",
   linkChoose: "Choose connection type",
